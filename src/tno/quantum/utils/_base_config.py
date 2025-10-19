@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import importlib
-import importlib.util
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from functools import partial
 from typing import Any, ClassVar, Generic, TypeVar
 
 from tno.quantum.utils._base_arguments import BaseArguments
@@ -17,8 +14,6 @@ from tno.quantum.utils.validation import (
     check_snake_case,
     check_string,
 )
-
-# ruff: noqa:  UP007
 
 T = TypeVar("T")
 
@@ -62,9 +57,7 @@ class BaseConfig(ABC, BaseArguments, Generic[T]):
     """
 
     _name: str
-    """Name used to determine the name of the to instantiate class."""
     _options: dict[str, Any]
-    """Keyword arguments to be passed to the constructor of the class."""
     _supported_custom_items: ClassVar[dict[str, type[Any] | Callable[..., Any]]] = {}
 
     def __init__(self, name: str, options: Mapping[str, Any] | None = None) -> None:
@@ -178,17 +171,14 @@ class BaseConfig(ABC, BaseArguments, Generic[T]):
         """Compute prefix that prevents naming conflicts in storage of custom items."""
         return f"{cls.__name__}-"
 
-    def get_instance(self, *additional_args: Any, **additional_kwargs: Any) -> T:
-        """Creates configured object instance.
-
-        Args:
-            additional_args: Additional constructor arguments to be passed to the class.
-            additional_kwargs: Additional constructor keyword arguments that are not
-                provided by the options, If the keyword argument is also provided in the
-                options, the``additional_kwargs`` take priority.
+    def get_constructor(self) -> type[T] | Callable[..., T]:
+        """Get the object constructor.
 
         Returns:
-            A configured object.
+            A constructor that can create class instance of the configured object.
+
+        Raises:
+            KeyError: If the configuration is not among supported items.
         """
         supported_items = self.supported_items()
         supported_custom_items = self.supported_custom_items()
@@ -204,162 +194,19 @@ class BaseConfig(ABC, BaseArguments, Generic[T]):
                 f"Allowed values are: {list(all_supported_items.keys())}."
             )
             raise KeyError(msg)
-        object_class = all_supported_items[name_snake_case]
+        return all_supported_items[name_snake_case]
+
+    def get_instance(self, *additional_args: Any, **additional_kwargs: Any) -> T:
+        """Creates configured object instance.
+
+        Args:
+            additional_args: Additional constructor arguments to be passed to the class.
+            additional_kwargs: Additional constructor keyword arguments that are not
+                provided by the options, If the keyword argument is also provided in the
+                options, the``additional_kwargs`` take priority.
+
+        Returns:
+            A configured object.
+        """
+        object_class = self.get_constructor()
         return object_class(*additional_args, **{**self._options, **additional_kwargs})
-
-
-if importlib.util.find_spec("pennylane") is not None:
-    from pennylane.devices import Device
-
-    @dataclass(init=False)
-    class BackendConfig(BaseConfig[Device]):
-        """Configuration class for creating PennyLane device instances.
-
-        Supported backends can be found by calling
-        :py:meth:`~BackendConfig.supported_items`.
-
-        Example:
-            >>> from tno.quantum.utils import BackendConfig
-            >>>
-            >>> # List all supported backends
-            >>> sorted(BackendConfig.supported_items())[:4]
-            ['default.clifford', 'default.gaussian', 'default.mixed', 'default.qubit']
-            >>>
-            >>> # Instantiate a backend
-            >>> config = BackendConfig(name="default.qubit", options={"wires": 5})
-            >>> type(config.get_instance())
-            <class 'pennylane.devices.default_qubit.DefaultQubit'>
-        """
-
-        def __init__(self, name: str, options: Mapping[str, Any] | None = None) -> None:
-            """Init :py:class:`BackendConfig`.
-
-            Args:
-                name: Name of the PennyLane :py:class:`~pennylane.devices.Device`,
-                    for example ``"default.qubit"``.
-                options: Keyword arguments to be passed to the constructor of the device
-                    class.
-
-            Raises:
-                TypeError: If `name` is not a string or `options` is not a mapping.
-                KeyError: If `options` has a key that is not a string.
-                KeyError: If `name` does not match any of the supported backends.
-            """
-            super().__init__(name=name, options=options)
-
-        @staticmethod
-        def supported_items() -> dict[str, Callable[..., Device]]:
-            """Obtain all supported PennyLane backend devices.
-
-            Returns:
-                Dictionary with callable that instantiate Pennylane Device instances.
-
-            Raises:
-                ModuleNotFoundError: If PennyLane can not be detected and no backends
-                    can be found.
-            """
-            try:
-                import pennylane as qml
-
-                return {
-                    device_name: partial(qml.device, name=device_name)
-                    for device_name in qml.plugin_devices
-                }
-            except ModuleNotFoundError as exception:
-                msg = "PennyLane can't be detected and hence no devices can be found."
-                raise ModuleNotFoundError(msg) from exception
-
-
-if importlib.util.find_spec("torch") is not None:
-    from torch.optim.optimizer import Optimizer
-
-    @dataclass(init=False)
-    class OptimizerConfig(BaseConfig[Optimizer]):
-        """Configuration class for creating instances of a PyTorch optimizer.
-
-        Currently only a selection of PyTorch optimizers are supported. See the
-        documentation of :py:meth:`~OptimizerConfig.supported_items` for information on
-        which optimizers are supported.
-
-        Example:
-            >>> import torch
-            >>> from tno.quantum.utils import OptimizerConfig
-            >>>
-            >>> # List all supported optimizers
-            >>> list(OptimizerConfig.supported_items())
-            ['adagrad', 'adam', 'rprop', 'stochastic_gradient_descent']
-            >>>
-            >>> # Instantiate an optimizer
-            >>> config = OptimizerConfig(name="adagrad", options={"lr": 0.5})
-            >>> type(config.get_instance(params=[torch.rand(1)]))
-            <class 'torch.optim.adagrad.Adagrad'>
-        """
-
-        def __init__(self, name: str, options: Mapping[str, Any] | None = None) -> None:
-            """Init :py:class:`OptimizerConfig`.
-
-            Args:
-                name: Name of the :py:class:`torch.optim.optimizer.Optimizer` class.
-                options: Keyword arguments to be passed to the optimizer. Must be a
-                    mapping-like object keys being string objects. Values can be
-                    anything depending on specific optimizer.
-
-            Raises:
-                TypeError: If `name` is not a string or `options` is not a mapping.
-                KeyError: If `options` has a key that is not a string.
-                KeyError: If `name` does not match any of the supported optimizers.
-            """
-            super().__init__(name=name, options=options)
-
-        @staticmethod
-        def supported_items() -> dict[str, type[Optimizer]]:
-            """Obtain supported PyTorch optimizers.
-
-            If PyTorch is installed then the following optimizers are supported:
-
-                - Adagrad
-                    - name: ``"adagrad"``
-                    - options: see `Adagrad kwargs`__
-
-                - Adam
-                    - name: ``"adam"``
-                    - options: see `Adam kwargs`__
-
-                - Rprop
-                    - name: ``"rprop"``
-                    - options: see `Rprop kwargs`__
-
-                - SDG:
-                    - name: ``"stochastic_gradient_descent"``
-                    - options: see `SDG kwargs`__
-
-
-            __ https://pytorch.org/docs/stable/generated/torch.optim.Adagrad.html
-            __ https://pytorch.org/docs/stable/generated/torch.optim.Adam.html
-            __ https://pytorch.org/docs/stable/generated/torch.optim.Rprop.html
-            __ https://pytorch.org/docs/stable/generated/torch.optim.SGD.html
-
-            Raises:
-                ModuleNotFoundError: If PyTorch can not be detected and no optimizers
-                    can be found.
-
-            Returns:
-                Dictionary with supported optimizers by their name.
-            """
-            try:
-                from torch.optim.adagrad import Adagrad
-                from torch.optim.adam import Adam
-                from torch.optim.rprop import Rprop
-                from torch.optim.sgd import SGD
-
-            except ModuleNotFoundError as exception:
-                msg = "Torch can't be detected and hence no optimizers can be found."
-                raise ModuleNotFoundError(msg) from exception
-
-            else:
-                return {
-                    "adagrad": Adagrad,
-                    "adam": Adam,
-                    "rprop": Rprop,
-                    "stochastic_gradient_descent": SGD,
-                }

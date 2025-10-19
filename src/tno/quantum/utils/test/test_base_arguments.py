@@ -12,8 +12,6 @@ from tno.quantum.utils import BaseArguments
 from tno.quantum.utils.serialization import check_serializable
 from tno.quantum.utils.validation import check_kwarglike
 
-# ruff: noqa:  UP007
-
 
 # region define test arguments objects
 @dataclass(init=False)

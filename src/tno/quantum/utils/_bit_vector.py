@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from copy import deepcopy
-from typing import TYPE_CHECKING, Any, SupportsInt, overload
+from typing import TYPE_CHECKING, Any, SupportsInt, TypeAlias, overload
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -13,7 +12,12 @@ from numpy.typing import ArrayLike
 from tno.quantum.utils.serialization import Serializable
 from tno.quantum.utils.validation import check_arraylike, check_binary
 
+BitVectorLike: TypeAlias = (
+    str | Mapping[Any, SupportsInt] | Sequence[SupportsInt] | ArrayLike
+)
+
 if TYPE_CHECKING:
+    import sys
     from typing import Self
 
     from numpy.typing import DTypeLike, NDArray
@@ -22,23 +26,6 @@ if TYPE_CHECKING:
         from typing import Self
     else:
         from typing_extensions import Self
-
-if sys.version_info >= (3, 10):
-    from typing import TypeAlias
-
-    BitVectorLike: TypeAlias = (
-        str | Mapping[Any, SupportsInt] | Sequence[SupportsInt] | ArrayLike
-    )
-else:
-    # Creating a type alias in Python 3.9
-    from typing import Union
-
-    BitVectorLike = Union[
-        str,
-        Mapping[Any, SupportsInt],
-        Sequence[SupportsInt],
-        ArrayLike,
-    ]
 
 
 class BitVector(Sequence[np.uint8], Serializable):

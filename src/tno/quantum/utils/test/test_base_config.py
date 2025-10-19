@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import pickle
 import sys
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import pennylane as qml
 import pytest
 import torch
 from numpy.typing import ArrayLike, NDArray
@@ -23,7 +24,7 @@ from torch.optim.adam import Adam
 from torch.optim.rprop import Rprop
 from torch.optim.sgd import SGD
 
-from tno.quantum.utils import BackendConfig, BaseConfig, OptimizerConfig
+from tno.quantum.utils import BackendConfig, BaseConfig, NoiseConfig, OptimizerConfig
 from tno.quantum.utils.serialization import check_serializable
 from tno.quantum.utils.test.test_base_arguments import GroundLevelArguments
 
@@ -37,7 +38,7 @@ if TYPE_CHECKING:
 
 
 # region BaseConfig
-class ValidConfig(BaseConfig[Union[int, GroundLevelArguments]]):
+class ValidConfig(BaseConfig[int | GroundLevelArguments]):
     """Config used for testing a valid configuration"""
 
     @staticmethod
@@ -60,6 +61,7 @@ def test_valid_configuration_int() -> None:
 
     # Test additional constructor arguments
     additional_arg = 5
+    assert config.get_constructor() is int
     assert config.get_instance(additional_arg) == additional_arg
 
 
@@ -74,6 +76,7 @@ def test_valid_configuration_ground_level_arguments() -> None:
         "int": int,
         "ground_level_arguments": GroundLevelArguments,
     }
+    assert config.get_constructor() is GroundLevelArguments
     assert config.get_instance() == GroundLevelArguments(name="test", size=5)
 
     # Test additional keyword constructor arguments
@@ -99,6 +102,7 @@ def test_default_qubit() -> None:
         name="default.qubit",
         options={"seed": 42, "shots": number_of_shots, "wires": number_of_wires},
     )
+    assert callable(backend_config.get_constructor())
     device = backend_config.get_instance()
     assert isinstance(device, DefaultQubit)
     assert device.shots.total_shots == number_of_shots
@@ -106,14 +110,147 @@ def test_default_qubit() -> None:
     assert str(device._rng).startswith("Generator(PCG64)")
 
 
-def test_empty_supported_devices_if_no_pennylane(
-    monkeypatch: pytest.MonkeyPatch,
+# region NoiseConfig
+
+
+@pytest.fixture(name="noise_config")
+def noise_config() -> NoiseConfig:
+    """Simple noise model that adds an RX(0.5) gate to every RZ gate."""
+    condition = qml.noise.op_eq(qml.RZ)
+    noise = qml.noise.partial_wires(qml.RX, 0.5)
+    model = qml.NoiseModel({condition: noise})
+    return NoiseConfig.from_model(model)
+
+
+@pytest.fixture(name="noise_config_with_gates")
+def noise_config_with_gates() -> NoiseConfig:
+    """Simple noise model that adds an RX(0.5) gate to every RZ gate."""
+    condition = qml.noise.op_eq(qml.RZ)
+    noise = qml.noise.partial_wires(qml.RX, 0.5)
+    model = qml.NoiseModel({condition: noise})
+    return NoiseConfig.from_model(model, ["RZ"])
+
+
+def test_noise_is_applied(noise_config: NoiseConfig) -> None:
+    """Test noise model passed via BackendConfig is correctly applied to circuit."""
+    noisy_device = BackendConfig(
+        name="default.mixed", options={"wires": 1}, noise=noise_config
+    ).get_instance()
+
+    @qml.qnode(noisy_device)  # type: ignore[misc]
+    def circuit(phi: float) -> qml.measurements.StateMP:
+        qml.RZ(phi, wires=0)
+        qml.RZ(-phi, wires=0)
+        return qml.state()
+
+    expected = np.array([[1.0, 0.0], [0.0, 0.0]])
+    fidelity = qml.math.fidelity(circuit(0.0), expected)
+    threshold = 0.9
+
+    assert fidelity < threshold
+
+
+def test_noise_is_not_applied(noise_config: NoiseConfig) -> None:
+    """Test noise model passed via BackendConfig is not applied to circuit if the
+    circuit is not sufficiently decomposed."""
+    noisy_device = BackendConfig(
+        name="default.mixed", options={"wires": 1}, noise=noise_config
+    ).get_instance()
+
+    hamiltonian = qml.Hamiltonian([0.5], [qml.Z(0)])
+
+    @qml.qnode(noisy_device)  # type: ignore[misc]
+    def circuit(phi: float) -> qml.measurements.StateMP:
+        qml.ApproxTimeEvolution(hamiltonian, phi, 1)
+        qml.ApproxTimeEvolution(hamiltonian, -phi, 1)
+        return qml.state()
+
+    expected = np.array([[1.0, 0.0], [0.0, 0.0]])
+    fidelity = qml.math.fidelity(circuit(0.0), expected)
+
+    assert fidelity == pytest.approx(1.0)
+
+
+def test_noise_is_applied_when_decomposed(noise_config_with_gates: NoiseConfig) -> None:
+    """Test noise model passed via BackendConfig is correctly applied to circuit when
+    the circuit is sufficiently decomposed."""
+    noisy_device = BackendConfig(
+        name="default.mixed",
+        options={"wires": 1},
+        noise=noise_config_with_gates,
+    ).get_instance()
+
+    hamiltonian = qml.Hamiltonian([0.5], [qml.Z(0)])
+
+    @qml.qnode(noisy_device)  # type: ignore[misc]
+    def circuit(phi: float) -> qml.measurements.StateMP:
+        qml.ApproxTimeEvolution(hamiltonian, phi, 1)
+        qml.ApproxTimeEvolution(hamiltonian, -phi, 1)
+        return qml.state()
+
+    expected = np.array([[1.0, 0.0], [0.0, 0.0]])
+    fidelity = qml.math.fidelity(circuit(0.0), expected)
+    threshold = 0.9
+
+    assert fidelity < threshold
+
+
+@pytest.mark.parametrize(
+    ("p", "check"),
+    [
+        (0.5, lambda fidelity: fidelity < 0.9),  # noqa: PLR2004
+        ({"RX": 0.5}, lambda fidelity: fidelity == pytest.approx(1.0)),
+        ({"Hadamard": 0.5}, lambda fidelity: fidelity < 0.9),  # noqa: PLR2004
+    ],
+)
+def test_depolarizing_one_qubit(
+    p: float | dict[str, float], check: Callable[[float], bool]
 ) -> None:
-    """Test empty supported optimizers if PennyLane is not installed."""
-    monkeypatch.setitem(sys.modules, "pennylane", None)
-    expected_message = "PennyLane can't be detected and hence no devices can be found."
-    with pytest.raises(ModuleNotFoundError, match=expected_message):
-        assert BackendConfig.supported_items()
+    """Test the depolarizing noise model on one qubit."""
+    noisy_device = BackendConfig(
+        name="default.mixed",
+        options={"wires": 1},
+        noise={"name": "depolarizing", "options": {"p": p}},
+    ).get_instance()
+
+    @qml.qnode(noisy_device)  # type: ignore[misc]
+    def circuit() -> qml.measurements.StateMP:
+        qml.Hadamard(0)
+        qml.Hadamard(0)
+        return qml.state()
+
+    expected = np.array([[1.0, 0.0], [0.0, 0.0]])
+    fidelity = qml.math.fidelity(circuit(), expected)
+
+    assert check(fidelity)
+
+
+def test_depolarizing_two_qubits() -> None:
+    """Test the depolarizing noise model on two qubits."""
+    noisy_device = BackendConfig(
+        name="default.mixed",
+        options={"wires": 2},
+        noise={"name": "depolarizing", "options": {"p": 0.5}},
+    ).get_instance()
+
+    @qml.qnode(noisy_device)  # type: ignore[misc]
+    def circuit() -> qml.measurements.StateMP:
+        qml.CNOT(wires=[0, 1])
+        qml.CNOT(wires=[0, 1])
+        return qml.state()
+
+    expected = np.array(
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+        ]
+    )
+    fidelity = qml.math.fidelity(circuit(), expected)
+    threshold = 0.9
+
+    assert fidelity < threshold
 
 
 # region OptimizerConfig

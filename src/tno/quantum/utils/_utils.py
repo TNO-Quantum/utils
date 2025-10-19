@@ -1,11 +1,14 @@
 """This module contains utility functions."""
 
-import importlib
+import importlib.util
 import inspect
 import re
 from typing import Any
 
 from tno.quantum.utils.validation import check_string
+
+if importlib.util.find_spec("numpy") is not None:
+    import numpy as np
 
 
 def convert_to_snake_case(x: str, *, path: bool = False) -> str:
@@ -93,3 +96,40 @@ def get_init_arguments_info(cls: type[Any]) -> dict[str, Any]:
             continue
         init_args[param.name] = param.default
     return init_args
+
+
+def check_equal(first: Any, second: Any) -> bool:  # noqa: PLR0911
+    """Check if two objects are equal.
+
+    Equality check if applied recursively on lists, tuples, dictionaries and NumPy
+    arrays. That is, such objects are considered equal if all their elements are equal.
+
+    Args:
+        first: First object to compare.
+        second: Second object to compare.
+
+    Returns:
+        True if objects are equal, otherwise false.
+    """
+    if type(first) is not type(second):
+        return False
+
+    if isinstance(first, dict):
+        if len(first) != len(second):
+            return False
+        for key in first:
+            if key not in second:
+                return False
+            if not check_equal(first[key], second[key]):
+                return False
+        return True
+
+    if isinstance(first, (list, tuple)):
+        if len(first) != len(second):
+            return False
+        return all(check_equal(x, y) for x, y in zip(first, second, strict=True))
+
+    if importlib.util.find_spec("numpy") is not None and isinstance(first, np.ndarray):
+        return np.array_equal(first, second)
+
+    return bool(first == second)

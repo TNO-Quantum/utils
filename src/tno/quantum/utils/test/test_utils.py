@@ -1,8 +1,15 @@
 """This module contains tests for ``tno.quantum.utils._utils``."""
 
+from typing import Any
+
+import numpy as np
 import pytest
 
-from tno.quantum.utils import convert_to_snake_case, get_installed_subclasses
+from tno.quantum.utils import (
+    check_equal,
+    convert_to_snake_case,
+    get_installed_subclasses,
+)
 from tno.quantum.utils.validation import check_snake_case
 
 
@@ -85,3 +92,39 @@ def test_convert_to_snake_path() -> None:
     converted_x = convert_to_snake_case(x, path=True)
     assert converted_x == "default.value"
     assert check_snake_case(converted_x, "converted_x", path=True)
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "expected"),
+    [
+        (1, 1, True),
+        (0, 1, False),
+        (
+            {"c": {"d": [5]}, "b": [2, 3], "a": 1},
+            {"a": 1, "b": [2, 3], "c": {"d": [5]}},
+            True,
+        ),
+        (
+            {"c": {"d": [6]}, "b": [2, 3], "a": 1},
+            {"a": 1, "b": [2, 3], "c": {"d": [5]}},
+            False,
+        ),
+        (
+            np.array([[1, 0], [0, 1]], dtype=np.float64),
+            np.array([[1, 0], [0, 1]], dtype=np.int32),
+            True,
+        ),
+        (
+            np.array([[1, 0], [0, 1]], dtype=np.float64),
+            np.array([[0, 1], [1, 0]], dtype=np.float64),
+            False,
+        ),
+        (None, None, True),
+        (0, None, False),
+        ("a", "a", True),
+        ("b", "c", False),
+    ],
+)
+def test_check_equal(first: Any, second: Any, expected: bool) -> None:
+    """Test the check_equal method."""
+    assert check_equal(first, second) == expected

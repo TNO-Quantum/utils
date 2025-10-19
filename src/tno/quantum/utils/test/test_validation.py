@@ -565,7 +565,7 @@ def test_warn_if_positive() -> None:
     warn_if_positive(0, "test")
     warn_if_positive(-1.0, "test")
 
-    with pytest.warns(UserWarning) as record:
+    with pytest.warns(UserWarning, match="was positive") as record:
         warn_if_positive(1, "test")
 
     assert len(record) == 1
@@ -577,7 +577,7 @@ def test_warn_if_negative() -> None:
     warn_if_negative(0, "test")
     warn_if_negative(1.0, "test")
 
-    with pytest.warns(UserWarning) as record:
+    with pytest.warns(UserWarning, match="was negative") as record:
         warn_if_negative(-1, "test")
 
     assert len(record) == 1

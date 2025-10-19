@@ -463,6 +463,27 @@ class Serializable:
 
         return cls
 
+    def __eq__(self, other: Any) -> bool:
+        """Check object equality.
+
+        This is the default equality check for serializable objects, where two objects
+        are considered equal if they are of the same type and produce the same
+        serialization.
+        """
+        if not isinstance(other, Serializable):
+            return False
+        if type(self) is not type(other):
+            return False
+        return self._serialize() == other._serialize()
+
+    def __hash__(self) -> int:
+        """Compute object hash.
+
+        This is the default hash function for serializable objects, where the hash
+        of an object is computed as a function of its serialization only.
+        """
+        return hash(json.dumps(self._serialize(), sort_keys=True, ensure_ascii=True))
+
 
 if importlib.util.find_spec("numpy") is not None:
     import numpy as np

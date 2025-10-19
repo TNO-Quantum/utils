@@ -18,5 +18,5 @@ contact:
 repository-code: https://github.com/TNO-Quantum/utils
 repository-artifact: https://pypi.org/project/tno.quantum.utils
 title: TNO Quantum - Utils
-version: v5.1.0
-date-released: 2025-05-12
+version: v5.4.1
+date-released: 2025-10-19

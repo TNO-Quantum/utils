@@ -13,7 +13,6 @@ license = { text = "Apache License, Version 2.0" }
 classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -25,7 +24,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dynamic = ["version"]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = ["pyyaml~=6.0", "numpy>=1.21.6"]
 
 [project.urls]
@@ -41,7 +40,7 @@ tests = [
     "scipy~=1.10",
     "torch~=2.2",
     "torchtyping~=0.1.4",
-    "pennylane~=0.33",
+    "pennylane~=0.38",
     "scikit-learn~=1.6",
     "pandas~=2.0",
     "networkx~=3.2.1",
@@ -56,20 +55,3 @@ version = { attr = "tno.quantum.utils.__version__" }
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
-
-[tool.tbump.version]
-current = "5.1.0"
-regex = '''
-\d+\.\d+\.\d+(-(.*))?
-'''
-
-[tool.tbump.git]
-message_template = "Bump to {new_version}"
-tag_template = "v{new_version}"
-
-[[tool.tbump.file]]
-src = "pyproject.toml"
-search = 'current = "{current_version}"'
-
-[[tool.tbump.file]]
-src = "src/tno/quantum/utils/__init__.py"

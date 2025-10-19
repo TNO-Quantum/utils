@@ -190,7 +190,7 @@ def test_iter_types() -> None:
     bit_vector = BitVector(bit_array)
 
     # Test the iteration
-    for expected_value, bit_vector_value in zip(bit_array, bit_vector):
+    for expected_value, bit_vector_value in zip(bit_array, bit_vector, strict=True):
         assert expected_value == bit_vector_value
         assert isinstance(bit_vector_value, np.uint8)  # Ensure the type is int
 

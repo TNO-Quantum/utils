@@ -171,7 +171,7 @@ def test_serialization_check_serializable() -> None:
     check_serializable(nested)
 
 
-class PrivateAttrs(Serializable):
+class PrivateAttrs(Serializable):  # noqa: PLW1641
     def __init__(self, x: int) -> None:
         self._x = x
 
@@ -237,7 +237,7 @@ if importlib.util.find_spec("numpy") is not None:
     from numpy.typing import NDArray
 
     @dataclass(eq=False)
-    class Matrix(Serializable):
+    class Matrix(Serializable):  # noqa: PLW1641
         matrix_f64: NDArray[np.float64]
         matrix_u8: NDArray[np.uint8]
         matrix_bool: NDArray[np.bool_]

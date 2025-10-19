@@ -197,9 +197,10 @@ def check_string(
         raise TypeError(error_msg)
 
     if lower:
-        x = x.lower()
+        return x.lower()
     if upper:
-        x = x.upper()
+        return x.upper()
+
     return x
 
 

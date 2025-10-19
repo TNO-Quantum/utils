@@ -1,4 +1,14 @@
 
+# 5.4.1 (2025 - 10 - 19)
+
+Support for `python3.9` is dropped.
+
+### Features
+
+* **Noise models:** Added support for noise to our `BackendConfig`. Introduced `NoiseConfig`.
+* Serializable objects now have default `eq` and `hash`:
+* Small additions such as `check_equal` and `get_constructor` for configs.
+
 # 5.1.0 (2025 - 05 - 12)
 
 ### Features
